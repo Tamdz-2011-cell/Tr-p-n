@@ -1,306 +1,358 @@
-import os
 import re
-import requests
+from flask import Flask, request, jsonify, render_template_string
 from bs4 import BeautifulSoup
-from flask import Flask, render_template_string, request, jsonify
-
-# Tự động khởi tạo file requirements.txt nếu chưa tồn tại trên server
-if not os.path.exists("requirements.txt"):
-    with open("requirements.txt", "w", encoding="utf-8") as f:
-        f.write("flask\nrequests\nbeautifulsoup4\ngunicorn\n")
 
 app = Flask(__name__)
 
-TEMPLATE = """
+# Giao diện HTML + CSS Đen Trắng nhúng trực tiếp
+HTML_LAYOUT = """
 <!DOCTYPE html>
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tâm DZ - Tra Cứu Đáp Án Web</title>
+    <title>TÂM DZ TRA CỨU WEB</title>
     <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Courier New', Courier, monospace;
+        }
+
         body {
             background-color: #0d0d0d;
             color: #ffffff;
-            font-family: 'Courier New', Courier, monospace;
             display: flex;
             justify-content: center;
             align-items: center;
             min-height: 100vh;
-            padding: 15px;
-        }
-        .container {
-            border: 2px solid #ff3333;
             padding: 20px;
-            width: 100%;
-            max-width: 600px;
-            border-radius: 8px;
-            background-color: #1a1a1a;
-            box-shadow: 0 0 15px rgba(255, 51, 51, 0.3);
-            text-align: center;
         }
+
+        .container {
+            width: 100%;
+            max-width: 480px;
+            background: #141414;
+            border: 2px solid #ffffff;
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 0 20px rgba(255, 255, 255, 0.15);
+        }
+
         h1 {
-            color: #ff3333;
-            text-transform: uppercase;
-            margin-bottom: 15px;
-            font-size: 1.5em;
-        }
-        .input-group { margin-bottom: 15px; text-align: left; }
-        label { display: block; margin-bottom: 5px; color: #ff6666; font-size: 0.85em; }
-        input[type="file"], input[type="text"] {
-            background-color: #262626;
+            text-align: center;
+            font-size: 22px;
+            letter-spacing: 2px;
+            margin-bottom: 24px;
             color: #ffffff;
-            border: 1px solid #ff3333;
-            padding: 10px;
-            width: 100%;
-            border-radius: 4px;
-            font-family: inherit;
-        }
-        input[type="file"]::file-selector-button {
-            background-color: #ff3333;
-            color: #0d0d0d;
-            border: none;
-            padding: 6px 10px;
-            border-radius: 3px;
-            cursor: pointer;
-            font-weight: bold;
-            margin-right: 8px;
-        }
-        .divider {
-            margin: 10px 0;
-            color: #888;
-            font-size: 0.8em;
-            position: relative;
-        }
-        .divider::before, .divider::after {
-            content: ""; position: absolute; top: 50%;
-            width: 40%; height: 1px; background-color: #444;
-        }
-        .divider::before { left: 0; } .divider::after { right: 0; }
-        button {
-            background-color: #ff3333;
-            color: #0d0d0d;
-            border: none;
-            padding: 12px;
-            cursor: pointer;
-            font-weight: bold;
             text-transform: uppercase;
-            margin-top: 10px;
+            border-bottom: 1px solid #333;
+            padding-bottom: 12px;
+        }
+
+        .section-label {
+            font-size: 13px;
+            color: #aaa;
+            margin-bottom: 8px;
+        }
+
+        .file-upload-box {
+            border: 1px dashed #ffffff;
+            border-radius: 6px;
+            padding: 12px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: #1a1a1a;
+            margin-bottom: 16px;
+        }
+
+        input[type="file"] {
+            display: none;
+        }
+
+        .custom-file-btn {
+            background: #ffffff;
+            color: #000000;
+            padding: 8px 14px;
+            font-weight: bold;
             border-radius: 4px;
-            font-size: 0.95em;
+            cursor: pointer;
+            font-size: 13px;
+            transition: 0.2s;
+        }
+
+        .custom-file-btn:hover {
+            background: #ccc;
+        }
+
+        .file-name {
+            font-size: 12px;
+            color: #888;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .divider {
+            text-align: center;
+            color: #555;
+            font-size: 12px;
+            margin: 12px 0;
+        }
+
+        input[type="text"] {
             width: 100%;
+            padding: 12px;
+            background: #1a1a1a;
+            border: 1px solid #333;
+            border-radius: 6px;
+            color: #fff;
+            font-size: 13px;
+            margin-bottom: 20px;
+            outline: none;
         }
-        button:hover { background-color: #ff6666; }
-        #progress-container { display: none; margin-top: 20px; }
-        #status-text { margin-bottom: 8px; font-size: 0.85em; color: #cccccc; }
-        #progress-bar {
-            width: 100%; background-color: #262626;
-            border-radius: 5px; overflow: hidden; border: 1px solid #444;
+
+        input[type="text"]:focus {
+            border-color: #fff;
         }
-        #progress-fill {
-            height: 20px; width: 0%; background-color: #ff3333;
-            text-align: center; line-height: 20px; font-weight: bold;
-            color: #0d0d0d; transition: width 0.3s ease; font-size: 0.8em;
+
+        .btn-submit {
+            width: 100%;
+            padding: 14px;
+            background: #ffffff;
+            color: #000000;
+            border: none;
+            font-weight: bold;
+            font-size: 15px;
+            border-radius: 6px;
+            cursor: pointer;
+            letter-spacing: 1px;
+            transition: 0.2s;
         }
-        #error-box {
-            color: #ff4d4d; margin-top: 15px; font-weight: bold; display: none;
-            padding: 10px; background-color: rgba(255, 77, 77, 0.1);
-            border: 1px solid #ff4d4d; border-radius: 4px; font-size: 0.85em;
+
+        .btn-submit:hover {
+            background: #dddddd;
         }
-        #result-container {
-            display: none; margin-top: 20px; max-height: 300px;
-            overflow-y: auto; border: 1px solid #ff3333; border-radius: 4px;
+
+        .status {
+            text-align: center;
+            font-size: 12px;
+            color: #aaa;
+            margin: 20px 0 8px;
         }
-        #result-table { width: 100%; border-collapse: collapse; color: #ffffff; text-align: left; }
-        #result-table th, #result-table td { padding: 8px 12px; border-bottom: 1px solid #333; font-size: 0.85em; }
-        #result-table th { background-color: #ff3333; color: #0d0d0d; position: sticky; top: 0; }
+
+        .progress-bar {
+            width: 100%;
+            height: 24px;
+            background: #222;
+            border: 1px solid #ffffff;
+            border-radius: 4px;
+            overflow: hidden;
+            position: relative;
+            margin-bottom: 20px;
+        }
+
+        .progress-fill {
+            width: 0%;
+            height: 100%;
+            background: #ffffff;
+            transition: width 0.3s;
+        }
+
+        .progress-text {
+            position: absolute;
+            width: 100%;
+            text-align: center;
+            line-height: 24px;
+            font-size: 12px;
+            font-weight: bold;
+            color: #000;
+            mix-blend-mode: difference;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+
+        th, td {
+            border: 1px solid #333;
+            padding: 10px;
+            text-align: left;
+            font-size: 13px;
+        }
+
+        th {
+            background: #ffffff;
+            color: #000000;
+            font-weight: bold;
+        }
+
+        tr:nth-child(even) {
+            background: #181818;
+        }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>Tâm DZ Tra Cứu Web</h1>
-        <form id="upload-form">
-            <div class="input-group">
-                <label for="file">1. Chọn File (.txt, .csv, .html):</label>
-                <input type="file" id="file" name="file" accept=".txt,.csv,.log,.html,.htm">
-            </div>
-            
-            <div class="divider">HOẶC</div>
 
-            <div class="input-group">
-                <label for="link">2. Dán đường dẫn Web:</label>
-                <input type="text" id="link" name="link" placeholder="https://example.com/dap-an">
-            </div>
+<div class="container">
+    <h1>TÂM DZ TRA CỨU WEB</h1>
 
-            <button type="button" onclick="startProcess()">Bắt đầu Tra cứu</button>
-        </form>
-        
-        <div id="progress-container">
-            <p id="status-text">Đang khởi tạo...</p>
-            <div id="progress-bar">
-                <div id="progress-fill">0%</div>
-            </div>
-        </div>
-
-        <div id="error-box"></div>
-
-        <div id="result-container">
-            <table id="result-table">
-                <thead>
-                    <tr>
-                        <th style="width: 30%;">Câu</th>
-                        <th style="width: 70%;">Đáp án</th>
-                    </tr>
-                </thead>
-                <tbody id="result-body">
-                </tbody>
-            </table>
-        </div>
+    <div class="section-label">1. Chọn File (.txt, .csv, .html):</div>
+    <div class="file-upload-box">
+        <label for="file-input" class="custom-file-btn">Chọn tệp</label>
+        <input type="file" id="file-input" accept=".html,.txt,.csv" onchange="updateFileName()">
+        <span class="file-name" id="file-name-display">Chưa chọn tệp...</span>
     </div>
 
-    <script>
-        async function startProcess() {
-            let fileInput = document.getElementById('file');
-            let linkInput = document.getElementById('link');
-            let errorBox = document.getElementById('error-box');
-            let progressContainer = document.getElementById('progress-container');
-            let resultContainer = document.getElementById('result-container');
-            let fill = document.getElementById('progress-fill');
-            let statusText = document.getElementById('status-text');
-            
-            errorBox.style.display = 'none';
-            errorBox.innerText = "";
-            
-            if (!fileInput.files[0] && !linkInput.value.trim()) {
-                errorBox.innerText = "Vui lòng chọn File hoặc nhập Link!";
-                errorBox.style.display = 'block';
+    <div class="divider">--- HOẶC ---</div>
+
+    <div class="section-label">2. Dán đường dẫn Web:</div>
+    <input type="text" placeholder="https://example.com/dap-an">
+
+    <button class="btn-submit" onclick="startSearch()">BẮT ĐẦU TRA CỨU</button>
+
+    <div class="status" id="status-text">Sẵn sàng</div>
+    <div class="progress-bar">
+        <div class="progress-fill" id="progress-fill"></div>
+        <div class="progress-text" id="progress-text">0%</div>
+    </div>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Câu</th>
+                <th>Đáp án</th>
+            </tr>
+        </thead>
+        <tbody id="result-body">
+            <tr>
+                <td>Câu 00</td>
+                <td>--</td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+
+<script>
+    function updateFileName() {
+        const input = document.getElementById('file-input');
+        const display = document.getElementById('file-name-display');
+        if (input.files.length > 0) {
+            display.innerText = input.files[0].name;
+            display.style.color = "#ffffff";
+        }
+    }
+
+    function startSearch() {
+        const fileInput = document.getElementById('file-input');
+        if (fileInput.files.length === 0) {
+            alert("Vui lòng chọn file HTML để tra cứu!");
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append('file', fileInput.files[0]);
+
+        document.getElementById('status-text').innerText = "Đang xử lý...";
+        document.getElementById('progress-fill').style.width = "50%";
+        document.getElementById('progress-text').innerText = "50%";
+
+        fetch('/parse', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            document.getElementById('progress-fill').style.width = "100%";
+            document.getElementById('progress-text').innerText = "100%";
+            document.getElementById('status-text').innerText = "Hoàn tất!";
+
+            const tbody = document.getElementById('result-body');
+            tbody.innerHTML = '';
+
+            if (data.data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="2">Không tìm thấy đáp án phù hợp</td></tr>';
                 return;
             }
 
-            progressContainer.style.display = 'block';
-            resultContainer.style.display = 'none';
-            
-            fill.style.width = '30%';
-            fill.innerHTML = '30%';
-            statusText.innerText = "Đang gửi yêu cầu...";
+            data.data.forEach(item => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `<td>${item.question}</td><td>${item.answer}</td>`;
+                tbody.appendChild(tr);
+            });
+        })
+        .catch(err => {
+            document.getElementById('status-text').innerText = "Lỗi xử lý file!";
+            console.error(err);
+        });
+    }
+</script>
 
-            let formData = new FormData(document.getElementById('upload-form'));
-
-            try {
-                fill.style.width = '70%';
-                fill.innerHTML = '70%';
-                statusText.innerText = "Đang bóc tách dữ liệu...";
-
-                let response = await fetch('/api/lookup', {
-                    method: 'POST',
-                    body: formData
-                });
-
-                let result = await response.json();
-
-                if (result.success) {
-                    fill.style.width = '100%';
-                    fill.innerHTML = '100%';
-                    statusText.innerText = "Hoàn tất!";
-                    setTimeout(() => { showResults(result.data); }, 300);
-                } else {
-                    progressContainer.style.display = 'none';
-                    errorBox.innerText = result.error || "Có lỗi xảy ra.";
-                    errorBox.style.display = 'block';
-                }
-            } catch (error) {
-                progressContainer.style.display = 'none';
-                errorBox.innerText = "Lỗi kết nối máy chủ!";
-                errorBox.style.display = 'block';
-            }
-        }
-
-        function showResults(data) {
-            let tbody = document.getElementById('result-body');
-            tbody.innerHTML = "";
-
-            if (!data || data.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="2" style="text-align:center; color:#aaa;">Không tìm thấy đáp án hợp lệ!</td></tr>`;
-            } else {
-                data.forEach(item => {
-                    let row = `<tr><td style="font-weight:bold; color:#ff6666;">${item.q}</td><td>${item.a}</td></tr>`;
-                    tbody.innerHTML += row;
-                });
-            }
-            
-            document.getElementById('result-container').style.display = 'block';
-        }
-    </script>
 </body>
 </html>
 """
 
-def parse_text_to_answers(content):
+@app.route('/')
+def home():
+    return render_template_string(HTML_LAYOUT)
+
+@app.route('/parse', methods=['POST'])
+def parse_file():
     results = []
-    lines = content.splitlines()
-    pattern = re.compile(r'^(?:Câu\s*)?(\d+)[\.\s:\-\)]+(.+)$', re.IGNORECASE)
-
-    for line in lines:
-        line = line.strip()
-        if not line:
-            continue
-        match = pattern.match(line)
-        if match:
-            q_num = f"Câu {match.group(1)}"
-            answer = match.group(2).strip()
-            results.append({"q": q_num, "a": answer})
-    return results
-
-@app.route("/", methods=["GET"])
-def index():
-    return render_template_string(TEMPLATE)
-
-@app.route("/api/lookup", methods=["POST"])
-def lookup():
-    text_content = ""
     if 'file' in request.files and request.files['file'].filename != '':
         file = request.files['file']
-        filename = file.filename.lower()
-        try:
-            raw_data = file.read()
-            try:
-                content = raw_data.decode('utf-8')
-            except UnicodeDecodeError:
-                content = raw_data.decode('latin-1')
-            
-            if filename.endswith(('.html', '.htm')):
-                soup = BeautifulSoup(content, 'html.parser')
-                for element in soup(["script", "style", "nav", "footer", "header", "aside"]):
-                    element.decompose()
-                text_content = soup.get_text(separator="\n")
-            else:
-                text_content = content
-        except Exception as e:
-            return jsonify({"success": False, "error": f"Lỗi đọc file: {str(e)}"})
-            
-    elif 'link' in request.form and request.form['link'].strip() != '':
-        url = request.form['link'].strip()
-        if not url.startswith(('http://', 'https://')):
-            url = 'https://' + url
-            
-        try:
-            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
-            res = requests.get(url, headers=headers, timeout=10)
-            res.encoding = res.apparent_encoding or 'utf-8'
-            
-            soup = BeautifulSoup(res.text, 'html.parser')
-            for element in soup(["script", "style", "nav", "footer", "header", "aside"]):
-                element.decompose()
+        content = file.read().decode('utf-8', errors='ignore')
+        results = extract_answers(content)
+    return jsonify({'data': results})
+
+def extract_answers(html_content):
+    soup = BeautifulSoup(html_content, 'html.parser')
+    answers = []
+    
+    questions = soup.find_all(['div', 'p', 'tr', 'li'], class_=re.compile(r'(question|item|cau|ques)', re.I))
+    
+    if not questions:
+        questions = soup.find_all(text=re.compile(r'Câu\s*\d+', re.I))
+
+    count = 1
+    for q in questions:
+        q_text = q.get_text() if hasattr(q, 'get_text') else str(q)
+        match_q = re.search(r'Câu\s*(\d+)', q_text, re.I)
+        q_num = match_q.group(1) if match_q else str(count)
+        
+        parent = q.parent if hasattr(q, 'parent') else q
+        correct_ans = None
+        
+        ans_elem = parent.find(class_=re.compile(r'(correct|right|true|active|selected|checked)', re.I))
+        if ans_elem:
+            correct_ans = ans_elem.get_text().strip()
+        else:
+            match_ans = re.search(r'([A-D])[\.\:\s]+', parent.get_text())
+            if match_ans:
+                correct_ans = match_ans.group(1)
                 
-            text_content = soup.get_text(separator="\n")
-        except Exception as e:
-            return jsonify({"success": False, "error": f"Lỗi tải link: {str(e)}"})
-    else:
-        return jsonify({"success": False, "error": "Vui lòng nhập File hoặc Link!"})
+        if not correct_ans or len(correct_ans) > 20:
+            correct_ans = "Đã chọn"
 
-    parsed_results = parse_text_to_answers(text_content)
-    return jsonify({"success": True, "data": parsed_results})
+        answers.append({
+            'question': f"Câu {q_num.zfill(2)}",
+            'answer': correct_ans
+        })
+        count += 1
+        
+    seen = set()
+    final_answers = []
+    for item in answers:
+        if item['question'] not in seen:
+            seen.add(item['question'])
+            final_answers.append(item)
+            
+    return final_answers
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     app.run(debug=True)
+        
