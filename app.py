@@ -9,7 +9,7 @@ HTML_LAYOUT = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TamdzXWifi WEB</title>
+    <title>TÂM DZ TRA CỨU WEB</title>
     <style>
         * {
             box-sizing: border-box;
@@ -136,7 +136,6 @@ HTML_LAYOUT = """
             background: #dddddd;
         }
 
-        /* Màn hình chờ Fullscreen Overlay */
         #loading-screen {
             position: fixed;
             top: 0;
@@ -188,7 +187,6 @@ HTML_LAYOUT = """
             mix-blend-mode: difference;
         }
 
-        /* Khung hiển thị bảng kết quả */
         #result-screen {
             display: none;
             margin-top: 20px;
@@ -237,14 +235,13 @@ HTML_LAYOUT = """
 </head>
 <body>
 
-<!-- Màn hình chính nhập liệu -->
 <div class="container" id="main-container">
-    <h1>TamdzXWifi WEB</h1>
+    <h1>TÂM DZ TRA CỨU WEB</h1>
 
-    <div class="section-label">1. Tải file văn bản (.txt):</div>
+    <div class="section-label">1. Tải file văn bản (.txt, .html):</div>
     <div class="file-upload-box">
-        <label for="file-input" class="custom-file-btn">Chọn file TXT</label>
-        <input type="file" id="file-input" accept=".txt" onchange="updateFileName()">
+        <label for="file-input" class="custom-file-btn">Chọn file</label>
+        <input type="file" id="file-input" accept=".txt,.html" onchange="updateFileName()">
         <span class="file-name" id="file-name-display">Chưa chọn tệp...</span>
     </div>
 
@@ -255,7 +252,6 @@ HTML_LAYOUT = """
 
     <button class="btn-submit" onclick="startSearch()">BẮT ĐẦU TRA CỨU</button>
 
-    <!-- Khung bảng kết quả -->
     <div id="result-screen">
         <div class="section-label" style="color: #fff; font-weight: bold;">KẾT QUẢ TRA CỨU:</div>
         <table>
@@ -273,7 +269,6 @@ HTML_LAYOUT = """
     </div>
 </div>
 
-<!-- Màn hình chờ Tiến Trình Fullscreen -->
 <div id="loading-screen">
     <div class="loading-title" id="loading-status">ĐANG TRA CỨU DỮ LIỆU...</div>
     <div class="progress-bar-container">
@@ -311,11 +306,10 @@ HTML_LAYOUT = """
         } else if (textInput.trim() !== "") {
             formData.append('text', textInput);
         } else {
-            alert("Vui lòng chọn file .txt hoặc dán nội dung câu hỏi!");
+            alert("Vui lòng chọn file hoặc dán nội dung câu hỏi!");
             return;
         }
 
-        // Hiện màn hình tiến trình full màn hình
         document.getElementById('loading-screen').style.display = 'flex';
         setProgress(10, "ĐANG ĐỌC DỮ LIỆU...");
 
@@ -332,16 +326,18 @@ HTML_LAYOUT = """
             method: 'POST',
             body: formData
         })
-        .then(response => response.json())
+        .then(response => {
+            if (!response.ok) {
+                throw new Error("Lỗi Server HTTP: " + response.status);
+            }
+            return response.json();
+        })
         .then(data => {
             clearInterval(interval);
             setProgress(100, "HOÀN TẤT!");
 
             setTimeout(() => {
-                // Ẩn màn hình tiến trình
                 document.getElementById('loading-screen').style.display = 'none';
-
-                // Hiển thị bảng kết quả
                 const resultScreen = document.getElementById('result-screen');
                 const tbody = document.getElementById('result-body');
                 tbody.innerHTML = '';
@@ -356,12 +352,12 @@ HTML_LAYOUT = """
                     });
                 }
                 resultScreen.style.display = 'block';
-            }, 500);
+            }, 400);
         })
         .catch(err => {
             clearInterval(interval);
             document.getElementById('loading-screen').style.display = 'none';
-            alert("Lỗi xử lý dữ liệu!");
+            alert("Chi tiết lỗi: " + err.message);
             console.error(err);
         });
     }
@@ -385,17 +381,23 @@ def home():
 
 @app.route('/parse', methods=['POST'])
 def parse():
-    content = ""
-    if 'file' in request.files and request.files['file'].filename != '':
-        file = request.files['file']
-        content = file.read().decode('utf-8', errors='ignore')
-    elif 'text' in request.form:
-        content = request.form['text']
+    try:
+        content = ""
+        if 'file' in request.files and request.files['file'].filename != '':
+            file = request.files['file']
+            content = file.read().decode('utf-8', errors='ignore')
+        elif 'text' in request.form:
+            content = request.form['text']
 
-    results = process_text(content)
-    return jsonify({'data': results})
+        results = process_text(content)
+        return jsonify({'data': results})
+    except Exception as e:
+        return jsonify({'error': str(e), 'data': []}), 500
 
 def process_text(text):
+    if not text:
+        return []
+
     results = []
     lines = text.split('\n')
     
@@ -424,11 +426,11 @@ def process_text(text):
             q_count += 1
             continue
 
-        if len(line_str) > 5 and not q_match:
+        if len(line_str) > 3 and not q_match:
             results.append({
                 'question': current_q,
                 'type': 'Tự luận / Khác',
-                'answer': line_str[:100] + ('...' if len(line_str) > 100 else '')
+                'answer': line_str[:120] + ('...' if len(line_str) > 120 else '')
             })
             current_q = None
             q_count += 1
@@ -437,4 +439,3 @@ def process_text(text):
 
 if __name__ == '__main__':
     app.run(debug=True)
-                           
