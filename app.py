@@ -9,7 +9,7 @@ HTML_LAYOUT = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TÂM DZ TRA CỨU WEB</title>
+    <title>Tamdznek WEB</title>
     <style>
         * {
             box-sizing: border-box;
@@ -236,7 +236,7 @@ HTML_LAYOUT = """
 <body>
 
 <div class="container" id="main-container">
-    <h1>TÂM DZ TRA CỨU WEB</h1>
+    <h1>Tamdznek WEB</h1>
 
     <div class="section-label">1. Tải file văn bản (.txt, .html):</div>
     <div class="file-upload-box">
